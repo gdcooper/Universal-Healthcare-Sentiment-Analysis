@@ -1,0 +1,355 @@
+---
+title: "R Healthcare HClust"
+output: html_document
+date: "2025-03-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r library}
+library(tm)
+library(stringr)
+library(wordcloud)
+
+library(slam)
+library(quanteda)
+
+library(SnowballC)
+library(arules)
+
+library(proxy)
+library(cluster)
+library(stringi)
+library(proxy)
+library(Matrix)
+library(tidytext) # convert DTM to DF
+library(plyr) ## for adply
+library(ggplot2)
+library(factoextra) # for fviz
+library(mclust) # for Mclust EM clustering
+library(textstem)  ## Needed for lemmatize_strings
+
+library(amap) 
+library(networkD3)
+```
+
+
+```{r}
+# load in csv file of raw text content
+data <- read.csv('Raw Master Data.csv', stringsAsFactors = FALSE)
+# check
+head(data)
+```
+
+```{r}
+head(data$Content)
+```
+
+```{r}
+# Turn content column into corpus with tm library
+ContentCorpus <- Corpus(VectorSource(data$Content))
+
+(getTransformations()) 
+(ndocs<-length(ContentCorpus))
+
+ContentCorpus <- tm_map(ContentCorpus, content_transformer(tolower))
+ContentCorpus <- tm_map(ContentCorpus, removePunctuation)
+## Remove all Stop Words
+ContentNovelsCorpus <- tm_map(ContentCorpus, removeWords, stopwords("english"))
+
+# Taking out common words
+MyStopWords <- c("and","like", "very", "can", "I", "also", "lot", "may", "us") # US is a common one, but not useful due to popularity
+ContentCorpus <- tm_map(ContentCorpus, removeWords, MyStopWords)
+ContentCorpus <- tm_map(ContentCorpus, lemmatize_strings)
+
+# check results
+summary(ContentCorpus)
+```
+
+```{r}
+Content_dtm <- DocumentTermMatrix(ContentCorpus,
+                         control = list(
+                           stopwords = TRUE, ## remove normal stopwords
+                           wordLengths=c(4, 15),
+                           removePunctuation = TRUE,
+                           removeNumbers = TRUE,
+                           tolower=TRUE,
+                           #stemming = TRUE,
+                           remove_separators = TRUE))
+
+DTM_mat <- as.matrix(Content_dtm)
+DTM_mat[1:13,1:10]
+```
+
+```{r}
+# Check word frequency
+(WordFreq <- colSums(as.matrix(Content_dtm)))
+
+(head(WordFreq))
+(length(WordFreq))
+ord <- order(WordFreq)
+(WordFreq[head(ord)])
+(WordFreq[tail(ord)])
+## Row Sums
+(Row_Sum_Per_doc <- rowSums((as.matrix(Content_dtm))))
+```
+
+
+```{r}
+# Copy the matrix
+Content_M <- as.matrix(Content_dtm)
+(Content_M[1:13,1:5])
+
+# Normalize the matrix
+Content_M_N1 <- apply(Content_M, 1, function(i) round(i/sum(i),3))
+(Content_M_N1[1:13,1:5])
+
+# Transpose data
+Content_Matrix_Norm <- t(Content_M_N1)
+(Content_Matrix_Norm[1:13,1:10])
+```
+```{r}
+as.matrix(Content_dtm[1:10, 1:10])
+Content_M <- as.matrix(Content_dtm)
+Content_DF <- as.data.frame(Content_M)
+```
+
+```{r}
+Content_DF[1:3, 1:10]
+(nrow(Content_DF))  # check number of news headlines/reddit pulls
+# DF formatting
+ncol(Content_DF)
+# Convert normalized data
+Content_DF_From_Matrix_N<-as.data.frame(Content_Matrix_Norm)
+```
+
+```{r}
+# check data first
+(Content_Matrix_Norm[c(1:6),c(3850:3900)])
+
+# also check non-normalized data to compare
+(Content_M[c(1:6),c(3850:3900)])
+```
+
+```{r}
+# make data copies
+m  <- Content_M
+m_norm <-Content_Matrix_Norm
+(str(m_norm))
+```
+
+```{r}
+distMatrix_C <- dist(m, method="cosine")
+print("cos sim matrix is :\n")
+print(distMatrix_C[1:10]) #check results
+
+# Normalized data version
+distMatrix_C_norm <- dist(m_norm, method="cosine", upper = TRUE, diag = TRUE)
+print("The norm cos sim matrix is :\n")
+print(distMatrix_C_norm[1:10])
+```
+
+```{r}
+# clustering
+groups_C <- hclust(distMatrix_C,method="ward.D")
+
+
+plot(groups_C, cex=.7, hang=-30,main = "Cosine Sim")
+rect.hclust(groups_C, k=5)
+
+radialNetwork(as.radialNetwork(groups_C))
+dendroNetwork(groups_C)
+```
+`
+Hmmm. It's hard to read. I'll try recoloring:
+
+```{r}
+# recolor using dendextend library
+avg_dend_obj <- as.dendrogram(groups_C)
+avg_col_dend <- color_branches(avg_dend_obj, h = 5)
+plot(avg_col_dend, main = 'Full Dendrogram')
+```
+
+```{R}
+# Normalized clustering
+# Clustering the full dataset 
+
+groups_C_n <- hclust(distMatrix_C_norm,method="ward.D")
+plot(groups_C_n, cex=0.9, hang=-1,main = "Cosine Sim and Normalized")
+rect.hclust(groups_C_n, k=5)
+
+radialNetwork(as.radialNetwork(groups_C_n))
+```
+
+```{r}
+# Going to try a randomized sample of 200 and re-run the dendrogram
+# sample without replacement
+data_sample <- data[sample(1:nrow(data), 50, replace = FALSE),]
+```
+
+Next, re-run calcuations on the sampled data:
+
+```{r}
+# Turn content column into corpus with tm library
+ContentCorpus2 <- Corpus(VectorSource(data_sample$Content))
+
+(getTransformations()) 
+(ndocs<-length(ContentCorpus2))
+
+ContentCorpus2 <- tm_map(ContentCorpus2, content_transformer(tolower))
+ContentCorpus2 <- tm_map(ContentCorpus2, removePunctuation)
+## Remove all Stop Words
+ContentNovelsCorpus2 <- tm_map(ContentCorpus2, removeWords, stopwords("english"))
+
+# Taking out common words
+MyStopWords <- c("and","like", "very", "can", "I", "also", "lot", "may", "us") # US is a common one, but not useful due to popularity
+ContentCorpus2 <- tm_map(ContentCorpus2, removeWords, MyStopWords)
+ContentCorpus2 <- tm_map(ContentCorpus2, lemmatize_strings)
+
+# check results
+summary(ContentCorpus2)
+```
+
+```{r}
+Content_dtm2 <- DocumentTermMatrix(ContentCorpus2,
+                         control = list(
+                           stopwords = TRUE, # remove normal stopwords
+                           wordLengths=c(4, 15), # remove words less than 4 or greater than 15 characters
+                           removePunctuation = TRUE,
+                           removeNumbers = TRUE,
+                           tolower=TRUE,
+                           #stemming = TRUE,
+                           remove_separators = TRUE))
+
+DTM_mat2 <- as.matrix(Content_dtm2)
+DTM_mat2[1:13,1:10]
+```
+```{r}
+# Check word frequency
+(WordFreq2 <- colSums(as.matrix(Content_dtm2)))
+
+(head(WordFreq2))
+(length(WordFreq2))
+ord <- order(WordFreq2)
+(WordFreq2[head(ord)])
+(WordFreq2[tail(ord)])
+## Row Sums
+(Row_Sum_Per_doc2 <- rowSums((as.matrix(Content_dtm2))))
+```
+
+```{r}
+# Copy the matrix
+Content_M2 <- as.matrix(Content_dtm2)
+(Content_M2[1:13,1:5])
+
+# Normalize the matrix
+Content_M_N12 <- apply(Content_M2, 1, function(i) round(i/sum(i),3))
+(Content_M_N12[1:13,1:5])
+
+# Transpose data
+Content_Matrix_Norm2 <- t(Content_M_N12)
+(Content_Matrix_Norm2[1:13,1:10])
+```
+```{r}
+as.matrix(Content_dtm2[1:10, 1:10])
+Content_M2 <- as.matrix(Content_dtm2)
+Content_DF2 <- as.data.frame(Content_M2)
+```
+
+```{R}
+
+Content_DF2[1:3, 1:10]
+(nrow(Content_DF2))  # check number of news headlines/reddit pulls
+# DF formatting
+ncol(Content_DF2)
+# Convert normalized data
+Content_DF_From_Matrix_N2<-as.data.frame(Content_Matrix_Norm2)
+```
+
+```{R}
+# check data first
+(Content_Matrix_Norm2[c(1:6),c(140:190)])
+
+# also check non-normalized data to compare
+(Content_M2[c(1:6),c(140:190)])
+```
+
+```{r}
+# make data copies
+m2  <- Content_M2
+m_norm2 <-Content_Matrix_Norm2
+(str(m_norm2))
+```
+
+```{r}
+# Make new distance matrices
+distMatrix_C2 <- dist(m2, method="cosine")
+print("sample cos sim matrix is :\n")
+print(distMatrix_C2[1:10]) #check results
+
+# Normalized data version
+distMatrix_C_norm2 <- dist(m_norm2, method="cosine", upper = TRUE, diag = TRUE)
+print("The sample norm cos sim matrix is :\n")
+print(distMatrix_C_norm2[1:10])
+```
+```{r}
+# re-do clustering with sampled data version
+groups_C2 <- hclust(distMatrix_C2,method="ward.D")
+
+
+plot(groups_C2, cex=.7, hang=-30,main = "Cosine Sim")
+rect.hclust(groups_C2, k=5)
+
+radialNetwork(as.radialNetwork(groups_C2))
+dendroNetwork(groups_C2)
+```
+
+Neat! It's much eaiser to see the results on smaller scales with dendrograms.
+The divisions seem to suggest that most of the inforamtion is located in 3 distinct clusters,
+So k = 3 would be an optimal value to try.
+
+Next, I'll recolor this version:
+
+```{r}
+# recolor using dendextend library
+avg_dend_obj2 <- as.dendrogram(groups_C2)
+avg_col_dend2 <- color_branches(avg_dend_obj2, h = 3)
+plot(avg_col_dend2, main = 'Sampled Data Dendrogram')
+```
+
+Hmmm. No clue why that works weird. Time to try the reduced normalized data.
+
+```{r}
+# Normalized reduced data clustering
+groups_C_n2 <- hclust(distMatrix_C_norm2,method="ward.D")
+plot(groups_C_n2, cex=0.9, hang=-1,main = "Reduced Cosine Sim and Normalized")
+rect.hclust(groups_C_n2, k=3)
+
+radialNetwork(as.radialNetwork(groups_C_n2))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

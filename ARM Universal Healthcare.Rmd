@@ -1,0 +1,182 @@
+---
+title: "ARM Exercise 2"
+output: html_document
+date: "2025-03-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r library}
+# import libraries here
+library(viridis)
+library(arules)
+library(TSP)
+library(data.table)
+#library(ggplot2)
+#library(Matrix)
+library(tcltk)
+library(dplyr)
+library(devtools)
+library(purrr)
+library(tidyr)
+library(arulesViz)
+```
+
+
+```{r}
+# Import raw tokenized data, partially cleaned in excel
+data <- read.csv('TokenizedData.csv', stringsAsFactors = FALSE)
+head(data$Tokens)
+head(data$LABEL)
+```
+
+Hmmm, there's a space after every row of text data. That needs to be removed:
+
+```{r}
+# Use trim white space, and gsub to replace any unusual characters
+data$Tokens <- trimws(data$Tokens)
+data$Tokens <- gsub("\\s+", " ", data$Tokens)
+```
+
+
+```{r}
+# transform data into list for via strsplit
+transaction_list <- strsplit(data$Tokens, " ", fixed = TRUE)
+
+# Convert to transactions
+transactions <- as(transaction_list, "transactions")
+```
+Next, the data will be cleaned to remove words smaller than 4 characters (often stopwords)
+
+```{r}
+# Remove words less than 4 characters, via lapply
+trans_list_fill <- lapply(transaction_list, function(x) x[nchar(x) >= 4])
+
+# revert data back to transactions
+transactions2 <- as(trans_list_fill, 'transactions')
+
+```
+
+
+
+
+
+```{r}
+# check results
+inspect(head(transactions2))
+```
+Good! The data is in transaction basket format. This was accomplished by transforming the token lists into lists again
+(to work with R formatting), and then cleaning them, and turning them back into baskets with as.transactions.
+
+Now that it's in transaction style, the data can be run through arules apriori. I decided on a confidence of 0.5 
+and a support of 0.35, which I found to have few enough rules to be meaningful to the dataset.
+
+```{r}
+# Now that data is clean/in transaction format, apply apriori with support 0.035 and confidence 0.5
+Frules = apriori(transactions2, parameter = list(support=.035, 
+                                                 confidence=.5, minlen=2))
+```
+
+Next, I'll look at the top 15 rules by confidence, support, and lift:
+
+```{r}
+# rules by confidence
+SortedRulesC <- sort(Frules, by="confidence", decreasing=TRUE)
+inspect(SortedRulesC[1:15])
+
+```
+
+Interesting! Healthcare is always the consequent. This make sense, since it's a database of sentiment on universal healthcare.
+
+Now support:
+
+```{r}
+# Rules by support
+SortedRulesS <- sort(Frules, by="confidence", decreasing = TRUE)
+inspect(SortedRulesS[1:15])
+```
+
+All the rules are also healthcare-dependent. The high prevalence of support for rules with 2-item antecedents is neat.
+They're words typically associated with healthcare and the U.S. healthcare system. I think rule 4 is most interesting because of 'don't'.
+
+```{r}
+# Rules by lift
+SortedRulesL <- sort(Frules, by = 'lift', decreasing = TRUE)
+inspect(SortedRulesL[1:15])
+```
+
+The only non-healthcare consequents! I find it interesting that one rule is an antecedent of 'want' and consequent of 'don't'. 
+
+```{r}
+# check overall rule results
+inspect(Frules)
+
+```
+
+
+The total set of rules for this set is 39. Not a ton. The basic unordered version has more of a focus on money/countries too.
+
+Time for plots!
+
+```{r}
+# Time to make visualizations
+
+# Plot of which items are most frequent
+
+itemFrequencyPlot(transactions2, topN = 20,
+                          col = brewer.pal(8, 'Pastel2'),
+                          main = 'Relative Item Frequency Plot',
+                          type = "relative", 
+                          ylab = "Item Frequency (Relative)")
+
+# Sort rules by lift
+SortedRules <- sort(Frules, by="lift", decreasing=TRUE)
+inspect(SortedRules[1:10])
+(summary(SortedRules))
+
+```
+
+Cost comes up a bit here, main focus is also on healthcare/insurance as ideas. Also seems to be a lot of 'opinion-based' words here. Cool.
+
+```{r}
+# Visualize
+# tcltk lift
+
+subrules <- head(sort(SortedRules, by="lift"),10)
+plot(subrules)
+
+plot(subrules, method="graph", engine="interactive")
+```
+
+```{r}
+# Visualize
+# tcltk support
+
+
+subrules <- head(sort(SortedRules, by="support"),10)
+plot(subrules)
+
+#plot(subrules, method="graph", engine="interactive")
+plot(subrules, method="graph", engine="htmlwidget")
+```
+
+```{r}
+# Visualize
+# tcltk confidence
+
+
+subrules <- head(sort(SortedRules, by="confidence"),10)
+plot(subrules)
+
+#plot(subrules, method="graph", engine="interactive")
+plot(subrules, method="graph", engine="htmlwidget")
+```
+
+
+
+
+
